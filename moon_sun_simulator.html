@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>月と太陽の見え方 シミュレーター</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: 'Hiragino Maru Gothic ProN', 'Yu Gothic UI', 'Meiryo', sans-serif;
+    color: #1d2731;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    background: #0d1530;
+    padding: 10px;
+    min-height: 100vh;
+  }
+  .app {
+    max-width: 1280px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 18px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    overflow: hidden;
+  }
+  header {
+    background: linear-gradient(90deg, #2c3e50 0%, #4a69bd 50%, #6c5ce7 100%);
+    color: white;
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  header h1 {
+    font-size: 1.25rem;
+    letter-spacing: 0.04em;
+  }
+  .status {
+    background: rgba(255,255,255,0.15);
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 0.95rem;
+    font-weight: bold;
+    font-feature-settings: "tnum";
+  }
+  .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #b71540; margin-right: 6px; }
+  .status.running .dot { background: #20bf6b; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: 0.4; } }
+
+  /* ===== ビュー切替タブ ===== */
+  .view-tabs {
+    display: flex;
+    background: #1f2c3e;
+    padding: 8px 10px 0 10px;
+    gap: 4px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid #2c3e50;
+  }
+  .view-tabs .tab {
+    background: rgba(255,255,255,0.08);
+    color: #dfe6e9;
+    border: none;
+    padding: 9px 16px;
+    border-radius: 10px 10px 0 0;
+    font-weight: bold;
+    font-size: 0.88rem;
+    cursor: pointer;
+    transition: background .15s, transform .1s;
+    border-bottom: 3px solid transparent;
+  }
+  .view-tabs .tab:hover { background: rgba(255,255,255,0.18); }
+  .view-tabs .tab.active {
+    background: white;
+    color: #2c3e50;
+    border-bottom-color: #4a69bd;
+  }
+
+  /* ===== 2画面ならび(タブで切替) ===== */
+  .dual-view {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+    background: #1d2731;
+    height: clamp(380px, 62vh, 700px);
+  }
+  .dual-view.mode-sky,
+  .dual-view.mode-topdown {
+    grid-template-columns: 1fr;
+    height: clamp(420px, 72vh, 820px);
+  }
+  .dual-view.mode-sky .topdown-wrap { display: none; }
+  .dual-view.mode-topdown .sky-wrap { display: none; }
+  @media (max-width: 980px) {
+    .dual-view {
+      grid-template-columns: 1fr;
+      height: auto;
+    }
+  }
+
+  /* ===== Sky(空ビュー) ===== */
+  .sky-wrap {
+    background: #1d2731;
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .sky-wrap svg { display: block; width: 100%; height: 100%; }
+  .vlabel {
+    position: absolute;
+    top: 10px; left: 14px;
+    background: rgba(0,0,0,0.55);
+    color: #fffae6;
+    padding: 5px 14px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: bold;
+    pointer-events: none;
+    border: 1px solid rgba(255,255,255,0.18);
+    z-index: 2;
+  }
+
+  /* ===== トップダウン(真上から見たビュー) ===== */
+  .topdown-wrap {
+    background: #050a1f;
+    position: relative;
+    border-left: 2px solid #2c3e50;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .topdown-wrap svg { display: block; width: 100%; height: 100%; }
+  /* 単独モードの真上ビューは横に伸びすぎないように */
+  .dual-view.mode-topdown .topdown-wrap svg {
+    width: auto;
+    height: 100%;
+    max-width: 100%;
+  }
+  @media (max-width: 980px) {
+    .topdown-wrap { border-left: none; border-top: 2px solid #2c3e50; min-height: 360px; }
+  }
+
+  /* ===== Controls ===== */
+  .controls {
+    background: #f1f2f6;
+    padding: 14px;
+    display: grid;
+    grid-template-columns: auto auto 1fr auto;
+    gap: 12px;
+    align-items: center;
+    border-top: 2px solid #d6e0eb;
+  }
+  @media (max-width: 880px) {
+    .controls {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  .ctrl {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .ctrl label {
+    font-size: 0.7rem;
+    color: #5b6e87;
+    font-weight: bold;
+    letter-spacing: 0.06em;
+  }
+  .ctrl input[type="date"], .ctrl input[type="time"] {
+    border: 2px solid #b2bec3;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 1rem;
+    font-weight: bold;
+    background: white;
+  }
+  .speed-pills {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .speed-pills button {
+    border: 2px solid #b2bec3;
+    background: white;
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    font-weight: bold;
+    cursor: pointer;
+    color: #2d3436;
+    transition: transform .1s, background .15s;
+  }
+  .speed-pills button:hover { background: #ecf0f6; }
+  .speed-pills button.active {
+    background: #4a69bd;
+    color: white;
+    border-color: #4a69bd;
+    box-shadow: 0 2px 6px rgba(74,105,189,0.4);
+  }
+  .actions {
+    display: flex;
+    gap: 6px;
+  }
+  .actions button {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 0.95rem;
+    font-weight: bold;
+    cursor: pointer;
+    color: white;
+    transition: transform .1s;
+  }
+  .actions button:active { transform: scale(0.95); }
+  .actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-run { background: #20bf6b; box-shadow: 0 3px 0 #0a8754; }
+  .btn-stop { background: #eb3b5a; box-shadow: 0 3px 0 #b71540; }
+  .btn-reset { background: #778ca3; box-shadow: 0 3px 0 #4b6584; }
+
+  /* ===== Info ===== */
+  .info {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1px;
+    background: #d6e0eb;
+  }
+  @media (max-width: 720px) {
+    .info { grid-template-columns: 1fr; }
+  }
+  .info-card {
+    background: white;
+    padding: 12px 16px;
+  }
+  .info-card h3 {
+    font-size: 0.8rem;
+    color: #5b6e87;
+    margin-bottom: 6px;
+    letter-spacing: 0.08em;
+  }
+  .info-card .row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    margin-bottom: 2px;
+  }
+  .info-card .row b { color: #0984e3; }
+  .info-card .pill-name {
+    display: inline-block;
+    background: #fff7e6;
+    border: 2px solid #fdcb6e;
+    color: #b9770e;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-weight: bold;
+    margin-top: 4px;
+  }
+  .quick-jumps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .quick-jumps button {
+    background: #ecf0f6;
+    border: 1px solid #b2bec3;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    padding: 3px 8px;
+    cursor: pointer;
+  }
+  .quick-jumps button:hover { background: #d6e0eb; }
+
+  /* ===== 観察記録エリア ===== */
+  .record-area {
+    background: #f8f9fc;
+    padding: 14px 18px;
+    border-top: 2px solid #d6e0eb;
+  }
+  .record-area h3 {
+    font-size: 0.95rem;
+    margin-bottom: 10px;
+    color: #2d3436;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .record-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .record-controls button {
+    border: none;
+    border-radius: 8px;
+    padding: 9px 14px;
+    font-size: 0.9rem;
+    font-weight: bold;
+    cursor: pointer;
+    color: white;
+    transition: transform .1s;
+  }
+  .record-controls button:active { transform: scale(0.95); }
+  .record-controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-record    { background: #6c5ce7; box-shadow: 0 3px 0 #4834d4; }
+  .btn-print     { background: #e17055; box-shadow: 0 3px 0 #c0392b; }
+  .btn-csv       { background: #00b894; box-shadow: 0 3px 0 #00866a; }
+  .btn-clear-obs { background: #95a5a6; box-shadow: 0 3px 0 #7f8c8d; }
+
+  .obs-list {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  @media (max-width: 720px) { .obs-list { grid-template-columns: 1fr; } }
+  .obs-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: white;
+    border: 2px solid #b2bec3;
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
+  .obs-card .num {
+    background: #6c5ce7; color: white;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: bold; font-size: 0.95rem;
+    flex-shrink: 0;
+  }
+  .obs-card .info { flex: 1; min-width: 0; }
+  .obs-card .info .time { font-weight: bold; font-size: 1rem; color: #2d3436; }
+  .obs-card .info .pos  { color: #5b6e87; font-size: 0.78rem; }
+  .obs-card .info .phase{ color: #b9770e; font-weight: bold; font-size: 0.78rem; }
+  .obs-card .del {
+    background: #eb3b5a; color: white; border: none;
+    border-radius: 50%;
+    width: 24px; height: 24px;
+    cursor: pointer; font-size: 0.85rem; font-weight: bold;
+    flex-shrink: 0;
+  }
+  .obs-empty {
+    color: #95a5a6;
+    padding: 20px;
+    text-align: center;
+    background: white;
+    border: 2px dashed #b2bec3;
+    border-radius: 10px;
+    grid-column: 1 / -1;
+    font-size: 0.85rem;
+  }
+  .obs-toast {
+    position: fixed;
+    bottom: 20px; left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: #2d3436; color: white;
+    padding: 12px 22px;
+    border-radius: 999px;
+    font-weight: bold;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+    z-index: 9999;
+    transition: transform .3s ease;
+  }
+  .obs-toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* SVG class helpers */
+  @keyframes twinkle {
+    50% { opacity: 0.3; }
+  }
+  .star { animation: twinkle 2.5s infinite; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>🌞🌙 月と太陽の見え方 シミュレーター</h1>
+    <div class="status" id="status"><span class="dot"></span><span id="statusText">停止中</span></div>
+  </header>
+
+  <div class="view-tabs" id="viewTabs">
+    <button class="tab active" data-mode="both">🔀 並べて見る</button>
+    <button class="tab"        data-mode="sky">📍 空ビューだけ(大きく)</button>
+    <button class="tab"        data-mode="topdown">🌍 真上ビューだけ(大きく)</button>
+  </div>
+
+  <div class="dual-view mode-both" id="dualView">
+  <div class="sky-wrap">
+    <div class="vlabel">📍 観察者から見た空(山口・南向き)</div>
+    <svg id="sky" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id="skyGrad" x1="0" x2="0" y1="0" y2="1">
+          <stop id="skyTop" offset="0%" stop-color="#4a90e2"/>
+          <stop id="skyBot" offset="100%" stop-color="#aedaf5"/>
+        </linearGradient>
+        <radialGradient id="sunGrad" cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0%" stop-color="#fff5b1"/>
+          <stop offset="60%" stop-color="#ffd54f"/>
+          <stop offset="100%" stop-color="#fb8c00"/>
+        </radialGradient>
+        <radialGradient id="sunHalo" cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0%" stop-color="#fff5b1" stop-opacity="0.6"/>
+          <stop offset="100%" stop-color="#fff5b1" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+
+      <!-- 空の背景 -->
+      <rect id="skyBg" x="0" y="0" width="1200" height="510" fill="url(#skyGrad)"/>
+
+      <!-- 星(夜になると見える) -->
+      <g id="stars" opacity="0"></g>
+
+      <!-- 太陽の通り道(うすい弧) -->
+      <path id="sunPath"  d="" fill="none" stroke="#ffd54f" stroke-width="2" stroke-dasharray="4 4" opacity="0.5"/>
+      <!-- 月の通り道 -->
+      <path id="moonPath" d="" fill="none" stroke="#dfe6e9" stroke-width="2" stroke-dasharray="4 4" opacity="0.5"/>
+
+      <!-- 太陽 -->
+      <g id="sunGroup" opacity="0">
+        <circle r="46" fill="url(#sunHalo)"/>
+        <circle r="28" fill="url(#sunGrad)" stroke="#e67e22" stroke-width="2"/>
+      </g>
+
+      <!-- 月(光ってる部分だけ表示) -->
+      <g id="moonGroup" opacity="0">
+        <!-- 太陽のほうへ回転するため、内側で「右が太陽」を前提に描く -->
+        <g id="moonRot">
+          <!-- 月の外円(うすく見せる:夜の参考用) -->
+          <circle id="moonGhost" r="28" fill="#1d2731" stroke="#5b6e87" stroke-width="1" opacity="0"/>
+          <!-- 光ってる部分 -->
+          <path id="moonLit" d="" fill="#fffae6" stroke="#fdcb6e" stroke-width="1.2"/>
+        </g>
+      </g>
+
+      <!-- 地平線/地面 -->
+      <rect x="0" y="510" width="1200" height="90" fill="#3b2f2f"/>
+      <!-- 山なみ -->
+      <path d="M 0 515
+               L 80 470 L 160 510 L 230 460 L 320 510
+               L 420 480 L 510 510 L 600 450 L 700 510
+               L 790 480 L 880 510 L 970 470 L 1080 510
+               L 1200 480 L 1200 600 L 0 600 Z"
+            fill="#2d2222" opacity="0.85"/>
+      <!-- 地面 -->
+      <rect x="0" y="540" width="1200" height="60" fill="#1d1410"/>
+      <!-- 観察者(子ども) -->
+      <g transform="translate(600, 555)">
+        <circle cx="0" cy="-12" r="6" fill="#fdcb6e"/>
+        <rect x="-5" y="-6" width="10" height="14" fill="#0984e3" rx="2"/>
+        <rect x="-5" y="6"  width="4" height="10" fill="#2d3436"/>
+        <rect x="1"  y="6"  width="4" height="10" fill="#2d3436"/>
+      </g>
+
+      <!-- コンパスラベル(東・南・西) -->
+      <g font-family="sans-serif" font-weight="bold" font-size="22" fill="#fffae6">
+        <rect x="40" y="525" width="40" height="32" fill="rgba(0,0,0,0.55)" rx="6"/>
+        <text x="60" y="548" text-anchor="middle">東</text>
+        <rect x="580" y="525" width="40" height="32" fill="rgba(0,0,0,0.55)" rx="6"/>
+        <text x="600" y="548" text-anchor="middle">南</text>
+        <rect x="1120" y="525" width="40" height="32" fill="rgba(0,0,0,0.55)" rx="6"/>
+        <text x="1140" y="548" text-anchor="middle">西</text>
+      </g>
+
+      <!-- 高さの目安(オルソ投影:y = 510 − sin(alt)·480) -->
+      <!-- 30°: y = 510 − 0.5·480 = 270 / 60°: y = 510 − 0.866·480 ≈ 94 -->
+      <line x1="80" y1="270" x2="1120" y2="270" stroke="rgba(255,255,255,0.18)" stroke-dasharray="3 6"/>
+      <line x1="80" y1="94"  x2="1120" y2="94"  stroke="rgba(255,255,255,0.18)" stroke-dasharray="3 6"/>
+      <text x="84" y="266" font-size="11" fill="rgba(255,255,255,0.55)">高さ 30°</text>
+      <text x="84" y="90"   font-size="11" fill="rgba(255,255,255,0.55)">高さ 60°</text>
+
+      <!-- 「沈んでいます」表示 -->
+      <g id="hidden-info" transform="translate(600, 80)" opacity="0">
+        <rect x="-180" y="-22" width="360" height="44" fill="rgba(0,0,0,0.55)" rx="10"/>
+        <text id="hiddenText" x="0" y="6" text-anchor="middle" font-size="16" font-weight="bold" fill="#fffae6">月は地平線の下にあります</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="topdown-wrap">
+    <div class="vlabel">🌍 真上から見たすがた(地球の北極から)</div>
+    <svg id="topdown" viewBox="0 0 600 500" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <radialGradient id="sunRadial2" cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0%" stop-color="#fffce8"/>
+          <stop offset="55%" stop-color="#fdcb6e"/>
+          <stop offset="100%" stop-color="#e67e22"/>
+        </radialGradient>
+        <radialGradient id="earthRadial" cx="0.4" cy="0.4" r="0.7">
+          <stop offset="0%" stop-color="#a8e6cf"/>
+          <stop offset="60%" stop-color="#0984e3"/>
+          <stop offset="100%" stop-color="#0a558e"/>
+        </radialGradient>
+      </defs>
+
+      <!-- 背景:宇宙 -->
+      <rect width="600" height="500" fill="#050a1f"/>
+      <!-- 星(背景) -->
+      <g id="topStars" opacity="0.6"></g>
+
+      <!-- 太陽からの光線 -->
+      <g stroke="#fdcb6e" stroke-width="2" opacity="0.45" stroke-linecap="round">
+        <line x1="490" y1="120" x2="320" y2="135"/>
+        <line x1="490" y1="180" x2="320" y2="190"/>
+        <line x1="490" y1="250" x2="320" y2="250"/>
+        <line x1="490" y1="320" x2="320" y2="310"/>
+        <line x1="490" y1="380" x2="320" y2="365"/>
+        <!-- 矢印っぽく -->
+        <polygon points="320,250 332,244 332,256" fill="#fdcb6e" opacity="0.7"/>
+      </g>
+
+      <!-- 太陽 -->
+      <g transform="translate(540, 250)">
+        <circle r="60" fill="url(#sunRadial2)" opacity="0.35"/>
+        <circle r="42" fill="url(#sunRadial2)" stroke="#e67e22" stroke-width="2"/>
+        <text x="0" y="78" text-anchor="middle" font-size="15" font-weight="bold" fill="#fdcb6e">太陽</text>
+      </g>
+
+      <!-- 月の通り道(きどう) -->
+      <circle cx="220" cy="250" r="135" fill="none" stroke="#5b6e87" stroke-dasharray="3 4" stroke-width="1.2"/>
+
+      <!-- 4つの位相位置のうすいマーカー(教育用) -->
+      <g font-size="11" font-weight="bold">
+        <g opacity="0.7">
+          <circle cx="355" cy="250" r="6" fill="#2d3436" stroke="#5b6e87"/>
+          <text x="367" y="254" fill="#7f8c8d">新月</text>
+        </g>
+        <g opacity="0.7">
+          <circle cx="220" cy="115" r="6" fill="none" stroke="#5b6e87"/>
+          <path d="M 220 109 A 6 6 0 0 1 220 121 Z" fill="#dfe6e9"/>
+          <text x="220" y="103" text-anchor="middle" fill="#7f8c8d">上弦の位置</text>
+        </g>
+        <g opacity="0.7">
+          <circle cx="85" cy="250" r="6" fill="#fffae6" stroke="#dfe6e9"/>
+          <text x="73" y="254" text-anchor="end" fill="#7f8c8d">満月</text>
+        </g>
+        <g opacity="0.7">
+          <circle cx="220" cy="385" r="6" fill="none" stroke="#5b6e87"/>
+          <path d="M 220 379 A 6 6 0 0 1 220 391 Z" fill="#dfe6e9"/>
+          <text x="220" y="402" text-anchor="middle" fill="#7f8c8d">下弦の位置</text>
+        </g>
+      </g>
+
+      <!-- 地球 -->
+      <g transform="translate(220, 250)">
+        <circle r="34" fill="url(#earthRadial)"/>
+        <!-- 夜のがわ(左半分:太陽と反対) -->
+        <path d="M 0 -34 A 34 34 0 0 0 0 34 Z" fill="rgba(0,0,0,0.55)"/>
+        <!-- 自転の向き矢印 -->
+        <path d="M -3 -42 A 42 42 0 0 1 6 -42" fill="none" stroke="#74b9ff" stroke-width="1.5" opacity="0.6"/>
+        <polygon points="6,-42 1,-46 1,-38" fill="#74b9ff" opacity="0.7"/>
+        <!-- 観察者(山口)のマーカー(自転で動く) -->
+        <g id="topTokyo" transform="translate(34, 0)">
+          <circle r="5" fill="#eb3b5a" stroke="white" stroke-width="2"/>
+          <text x="10" y="4" font-size="11" font-weight="bold" fill="#ffeaa7">山口</text>
+        </g>
+        <text x="0" y="55" text-anchor="middle" font-size="14" font-weight="bold" fill="#74b9ff">地球</text>
+      </g>
+
+      <!-- 視線(山口 → 月)。月が地平線下なら点線をうすく -->
+      <line id="topLOS" x1="0" y1="0" x2="0" y2="0" stroke="#ff7f50" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.7"/>
+
+      <!-- 月(現在位置・現在位相) -->
+      <g id="topMoon" transform="translate(355, 250)">
+        <!-- 暗いがわ(左半分:太陽と反対) -->
+        <circle r="14" fill="#3d4754" stroke="#7f8c8d" stroke-width="1.2"/>
+        <!-- 光ってるがわ(右半分:太陽むき) -->
+        <path d="M 0 -14 A 14 14 0 0 1 0 14 Z" fill="#fffae6"/>
+      </g>
+
+      <!-- ヒント -->
+      <text x="300" y="468" text-anchor="middle" font-size="12" fill="#74b9ff">
+        🌟 月の光ってる側は いつも太陽のほうを向いている
+      </text>
+      <text x="300" y="485" text-anchor="middle" font-size="11" fill="#a4b0be">
+        山口の自転で 月が「いつ」「どこに」見えるかが変わるよ
+      </text>
+    </svg>
+  </div>
+  </div>
+
+  <div class="controls">
+    <div class="ctrl">
+      <label>📅 年月日</label>
+      <input type="date" id="dateInput">
+    </div>
+    <div class="ctrl">
+      <label>🕐 時こく</label>
+      <input type="time" id="timeInput" step="60">
+    </div>
+    <div class="ctrl">
+      <label>⏩ スピード(倍速)</label>
+      <div class="speed-pills" id="speedPills">
+        <button data-speed="1">×1 (実時間)</button>
+        <button data-speed="60">×60 (1分/秒)</button>
+        <button data-speed="600">×600 (10分/秒)</button>
+        <button data-speed="3600" class="active">×3,600 (1時間/秒)</button>
+        <button data-speed="21600">×21,600 (6時間/秒)</button>
+        <button data-speed="86400">×86,400 (1日/秒)</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-run"   id="runBtn">▶ スタート</button>
+      <button class="btn-stop"  id="stopBtn">■ ストップ</button>
+      <button class="btn-reset" id="resetBtn">↺ リセット</button>
+    </div>
+  </div>
+
+  <div class="info">
+    <div class="info-card">
+      <h3>☀️ 太陽</h3>
+      <div class="row"><span>方位</span><b id="sunAz">--</b></div>
+      <div class="row"><span>高さ(地平線から)</span><b id="sunAlt">--</b></div>
+      <div class="row" id="sunVisRow"><span>状態</span><b id="sunVis">--</b></div>
+    </div>
+    <div class="info-card">
+      <h3>🌙 月</h3>
+      <div class="row"><span>方位</span><b id="moonAz">--</b></div>
+      <div class="row"><span>高さ(地平線から)</span><b id="moonAlt">--</b></div>
+      <div class="row"><span>月れい(新月から)</span><b id="moonAge">--</b></div>
+      <div><span class="pill-name" id="moonName">--</span></div>
+    </div>
+    <div class="info-card">
+      <h3>📍 ジャンプ</h3>
+      <div class="quick-jumps" id="quickJumps">
+        <button data-mday="0">新月の日</button>
+        <button data-mday="7.4">上弦の月</button>
+        <button data-mday="14.8">満月の日</button>
+        <button data-mday="22.1">下弦の月</button>
+      </div>
+      <div class="quick-jumps" style="margin-top:6px;">
+        <button data-time="06:00">朝 6:00</button>
+        <button data-time="12:00">昼 12:00</button>
+        <button data-time="18:00">夕方 18:00</button>
+        <button data-time="00:00">真夜中 0:00</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============= 観察記録エリア ============= -->
+  <div class="record-area">
+    <h3>📒 観察記録 — 同じ日の3つの時刻まで記録できます</h3>
+    <div class="record-controls">
+      <button class="btn-record"    id="recordBtn">📷 この時刻を記録</button>
+      <button class="btn-print"     id="printBtn" disabled>🖨 観察記録シートを印刷(PDF保存)</button>
+      <button class="btn-csv"       id="csvBtn"   disabled>📊 CSV出力</button>
+      <button class="btn-clear-obs" id="clearObsBtn" disabled>↺ 記録をクリア</button>
+    </div>
+    <div class="obs-list" id="obsList">
+      <div class="obs-empty">⬆ 上の「スタート」で時間を進め、観察したい時刻になったら「📷 この時刻を記録」を押してください</div>
+    </div>
+  </div>
+</div>
+
+<div class="obs-toast" id="obsToast">記録しました!</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ============================================
+  //  天文(てんもん)けいさん
+  // ============================================
+  const OBS_LAT = 34.1858;       // 観測地・山口(山口市)
+  const OBS_LON = 131.4706;      // 山口市の経度
+  const STD_MERIDIAN = 135;      // 日本標準時(JST)の子午線(明石)
+  const OBS_NAME = '山口';
+  // 基準新月:2024-01-11 11:57 UTC ≒ 2024-01-11 20:57 JST
+  // (国立天文台暦象年表より)
+  const REF_NEWMOON_MS = Date.UTC(2024, 0, 11, 11, 57);
+  const SYNODIC_DAYS = 29.530588853;
+
+  function deg(rad){ return rad*180/Math.PI; }
+  function rad(d){ return d*Math.PI/180; }
+  function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+  function pad(n){ return n<10?('0'+n):(''+n); }
+
+  // 1月1日からの通日(日)
+  function dayOfYear(d){
+    const start = new Date(d.getFullYear(), 0, 0);
+    return Math.floor((d - start) / 86400000);
+  }
+
+  // 太陽の位置(高度・方位[北→東+])
+  function sunPosition(date){
+    const dy = dayOfYear(date);
+    const hour = date.getHours() + date.getMinutes()/60 + date.getSeconds()/3600;
+    // 太陽の赤緯(rad)
+    const decl = rad(23.45) * Math.sin(rad(360/365.25 * (dy - 81)));
+    // 時角(rad)。経度補正を入れる(JST=135°基準、山口は131.47°なので西へずれる)
+    // 簡略化のため均時差は省略
+    const H = rad(15 * (hour - 12) + (OBS_LON - STD_MERIDIAN));
+    const lat = rad(OBS_LAT);
+    const sinAlt = Math.sin(lat)*Math.sin(decl) + Math.cos(lat)*Math.cos(decl)*Math.cos(H);
+    const altitude = Math.asin(clamp(sinAlt,-1,1));
+    const sinAz = -Math.cos(decl)*Math.sin(H)/Math.cos(altitude);
+    const cosAz = (Math.sin(decl) - Math.sin(altitude)*Math.sin(lat)) / (Math.cos(altitude)*Math.cos(lat));
+    let azimuth = Math.atan2(sinAz, cosAz);  // 北を0として時計回り
+    if (azimuth < 0) azimuth += 2*Math.PI;
+    return { altitude, azimuth, decl, H };
+  }
+
+  // 月の位置と位相(きょくたんに簡略化:教育用)
+  function moonInfo(date){
+    // 新月からの経過(日)
+    const days = (date.getTime() - REF_NEWMOON_MS) / 86400000;
+    // 0〜1 (1=次の新月)
+    let phaseFrac = (days / SYNODIC_DAYS) % 1;
+    if (phaseFrac < 0) phaseFrac += 1;
+    const ageDays = phaseFrac * SYNODIC_DAYS;  // 月れい(0〜29.5)
+    const phaseDeg = phaseFrac * 360;          // 0=新月, 90=上弦, 180=満月, 270=下弦
+    // 月の時角 ≒ 太陽の時角 − 位相角
+    const dy = dayOfYear(date);
+    const hour = date.getHours() + date.getMinutes()/60 + date.getSeconds()/3600;
+    // 太陽の時角(経度補正つき)
+    const sunH_deg = 15 * (hour - 12) + (OBS_LON - STD_MERIDIAN);
+    let moonH_deg = sunH_deg - phaseDeg;
+    moonH_deg = ((moonH_deg + 540) % 360) - 180; // -180〜180
+    const H = rad(moonH_deg);
+    // 月の黄経 = 太陽の黄経 + 位相角
+    const sunEcLng = ((dy - 81) * 360 / 365.25) % 360;
+    const moonEcLng = (sunEcLng + phaseDeg) % 360;
+    // 黄経から赤緯(白道≒黄道として近似)
+    const decl = rad(23.45) * Math.sin(rad(moonEcLng));
+    const lat = rad(OBS_LAT);
+    const sinAlt = Math.sin(lat)*Math.sin(decl) + Math.cos(lat)*Math.cos(decl)*Math.cos(H);
+    const altitude = Math.asin(clamp(sinAlt,-1,1));
+    const sinAz = -Math.cos(decl)*Math.sin(H)/Math.cos(altitude);
+    const cosAz = (Math.sin(decl) - Math.sin(altitude)*Math.sin(lat)) / (Math.cos(altitude)*Math.cos(lat));
+    let azimuth = Math.atan2(sinAz, cosAz);
+    if (azimuth < 0) azimuth += 2*Math.PI;
+    return { altitude, azimuth, ageDays, phaseDeg };
+  }
+
+  // ============================================
+  //  座標投影(空ドーム → 画面):オルソグラフィック投影
+  //  線形alt-az投影だと南中近くで天体の動きが速く見え、東西で遅く見える。
+  //  オルソグラフィック投影に変えることで、球面上の一様な動きが画面でも
+  //  ほぼ均一に見えるようになる。
+  // ============================================
+  // viewBox 1200x600 / 地平線 y=510 / 天頂 y=30
+  const STAGE = { cx: 600, hy: 510, topY: 30, halfX: 540 };
+
+  function project(altitude, azimuth){
+    const altDeg = deg(altitude);
+    const cosAlt = Math.cos(altitude);
+    const sinAlt = Math.sin(altitude);
+    // 球面上の位置を、南向き観察者の視野平面に直接(オルソ)投影
+    //   x = cx − cos(alt)·sin(az)·halfX  (右=西、左=東)
+    //   y = hy − sin(alt)·(hy−topY)       (上=天頂)
+    //   北側の半球(背後)は By > 0 で識別して非表示
+    const Bx = cosAlt * Math.sin(azimuth);
+    const By = cosAlt * Math.cos(azimuth);
+    const x = STAGE.cx - Bx * STAGE.halfX;
+    const y = STAGE.hy - clamp(sinAlt, -0.18, 1) * (STAGE.hy - STAGE.topY);
+    // 互換のため azS / azDeg も返す
+    const azDeg = deg(azimuth);
+    const azS = ((azDeg - 180 + 540) % 360) - 180;
+    // 観察者は南向きだが、夏の太陽は北東〜北西で出入りするため
+    // 地平線付近の出没アークは「やや後ろ寄り」になる。
+    // By < 0.7 まで許容して 山際まで描画する。
+    // (真北・高高度などの「真の後方」は altDeg と組合せで自然に除外される)
+    const visible = altDeg > -1 && By < 0.7;
+    return { x, y, altDeg, azDeg, azS, visible };
+  }
+
+  // 方位を「東/南/西」テキストに
+  function azText(azDeg){
+    const dirs = ['北','北東','東','南東','南','南西','西','北西'];
+    const idx = Math.round(azDeg/45) % 8;
+    return `${dirs[idx]} (${azDeg.toFixed(0)}°)`;
+  }
+
+  // ============================================
+  //  色のグラデーション(空)
+  // ============================================
+  function lerp(a,b,t){ return a+(b-a)*t; }
+  function hex(c){ return '#'+[c[0],c[1],c[2]].map(v=>Math.round(clamp(v,0,255)).toString(16).padStart(2,'0')).join(''); }
+  function parseHex(h){ return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)]; }
+  function lerpColor(a,b,t){ const A=parseHex(a),B=parseHex(b); return hex([lerp(A[0],B[0],t),lerp(A[1],B[1],t),lerp(A[2],B[2],t)]); }
+
+  function skyColors(sunAltDeg){
+    // 高度ごとのキーカラー(top/bot)
+    const stops = [
+      { a: -18, top:'#050816', bot:'#0a1030' },     // 真っ暗
+      { a: -6,  top:'#0e1338', bot:'#322256' },     // 薄明
+      { a:  0,  top:'#3b2c63', bot:'#ff7a59' },     // 日の出/日没
+      { a:  6,  top:'#74a4d6', bot:'#ffd093' },     // 朝焼け落ち着き
+      { a: 25,  top:'#4a90e2', bot:'#aedaf5' },     // 昼
+      { a: 90,  top:'#3a7bbf', bot:'#9ed1f2' },     // 真昼
+    ];
+    for (let i=0;i<stops.length-1;i++){
+      if (sunAltDeg <= stops[i+1].a){
+        const A = stops[i], B = stops[i+1];
+        const t = clamp((sunAltDeg - A.a)/(B.a - A.a), 0, 1);
+        return { top: lerpColor(A.top,B.top,t), bot: lerpColor(A.bot,B.bot,t) };
+      }
+    }
+    return { top: stops[stops.length-1].top, bot: stops[stops.length-1].bot };
+  }
+
+  // ============================================
+  //  月の「光ってる部分」のSVGパス
+  //  常に +x(右)側を光った側として描く。
+  //  満月→新月(下弦側)では p > 180 を 360-p に折り返して
+  //  上弦側と同じ形を描き、最終的な左右は外側で rotate して合わせる。
+  // ============================================
+  function moonLitPath(r, phaseDeg){
+    let p = ((phaseDeg % 360) + 360) % 360;
+    if (p > 180) p = 360 - p;          // waning を waxing に折り返し
+    if (p < 0.5) return null;          // 新月相当:光なし
+    if (p > 179.5){
+      // 満月:全円
+      return `M ${-r} 0 A ${r} ${r} 0 1 0 ${r} 0 A ${r} ${r} 0 1 0 ${-r} 0 Z`;
+    }
+    const ellipseRx = Math.max(0.5, Math.abs(Math.cos(rad(p))) * r);
+    const outerSweep = 1;              // 外側の弧は常に右半周
+    const innerSweep = (p < 90) ? 0 : 1; // 三日月:右側で食い込む / 凸月:左側に伸ばす
+    return `M 0 ${-r} A ${r} ${r} 0 0 ${outerSweep} 0 ${r} A ${ellipseRx} ${r} 0 0 ${innerSweep} 0 ${-r} Z`;
+  }
+
+  // 月の形の名前
+  function phaseName(age){
+    const a = age;
+    if (a < 1.0)  return '新月';
+    if (a < 5.5)  return '三日月';
+    if (a < 9.0)  return '上弦の月';
+    if (a < 13.0) return '十日夜の月';
+    if (a < 16.5) return '満月';
+    if (a < 20.5) return '十六夜の月';
+    if (a < 23.5) return '下弦の月';
+    if (a < 28.5) return '有明の月';
+    return '新月直前';
+  }
+
+  // ============================================
+  //  星の生成
+  // ============================================
+  const starsGroup = document.getElementById('stars');
+  function makeStars(){
+    const xs = [];
+    const N = 110;
+    let html = '';
+    for (let i=0;i<N;i++){
+      const x = Math.random()*1200;
+      const y = Math.random()*490;
+      const r = Math.random()*1.6 + 0.4;
+      const op = (Math.random()*0.6 + 0.4).toFixed(2);
+      const dur = (Math.random()*3 + 1.5).toFixed(2);
+      html += `<circle class="star" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(2)}" fill="#fffae6" opacity="${op}" style="animation-duration:${dur}s"/>`;
+    }
+    starsGroup.innerHTML = html;
+  }
+  makeStars();
+
+  // ============================================
+  //  シーン描画
+  // ============================================
+  const skyTop = document.getElementById('skyTop');
+  const skyBot = document.getElementById('skyBot');
+  const sunGroup  = document.getElementById('sunGroup');
+  const moonGroup = document.getElementById('moonGroup');
+  const moonRot   = document.getElementById('moonRot');
+  const moonLit   = document.getElementById('moonLit');
+  const moonGhost = document.getElementById('moonGhost');
+  const sunPathEl  = document.getElementById('sunPath');
+  const moonPathEl = document.getElementById('moonPath');
+  const hiddenInfo = document.getElementById('hidden-info');
+  const hiddenText = document.getElementById('hiddenText');
+
+  // 通り道を描画(現時刻の±12時間で、いまの「見えている時間帯」が
+  // 1本のなめらかな弧として表示されるように)
+  function buildDailyArc(date, isMoon){
+    let d = '';
+    let started = false;
+    for (let m = -720; m <= 720; m += 10){
+      const t = new Date(date.getTime() + m*60000);
+      const pos = isMoon ? moonInfo(t) : sunPosition(t);
+      const p = project(pos.altitude, pos.azimuth);
+      if (p.visible && p.altDeg > -2){
+        d += (started ? ' L ' : 'M ') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
+        started = true;
+      } else if (started){
+        started = false;
+      }
+    }
+    return d;
+  }
+
+  // 月の光ってる側を太陽方向に向けるための回転角(度)。
+  // 月・太陽の3次元単位ベクトルから「月から太陽への接線方向」を出し、
+  // それを観察者(南向き)の画面平面に投影して角度を求める。
+  // どんな月の位置でも・太陽が地平線下でも・北を回り込んでも 連続。
+  function brightLimbScreenAngle(altM, azM, altS, azS){
+    // 3D unit vectors: x = east, y = north, z = up
+    const M = [Math.cos(altM)*Math.sin(azM), Math.cos(altM)*Math.cos(azM), Math.sin(altM)];
+    const S = [Math.cos(altS)*Math.sin(azS), Math.cos(altS)*Math.cos(azS), Math.sin(altS)];
+    // 月から見た太陽方向の接線ベクトル T(球面上)
+    const dot = S[0]*M[0] + S[1]*M[1] + S[2]*M[2];
+    const Tx = S[0] - dot*M[0];
+    const Tz = S[2] - dot*M[2];
+    // 南向き観察者の画面に投影:
+    //   画面の右 = 西方向 = -東 → screen_x = -Tx
+    //   画面の下 = -天頂方向     → screen_y = -Tz
+    return Math.atan2(-Tz, -Tx) * 180 / Math.PI;
+  }
+
+  function render(date){
+    const sun = sunPosition(date);
+    const moon = moonInfo(date);
+    const sunDegAlt = deg(sun.altitude);
+
+    // 空の色
+    const c = skyColors(sunDegAlt);
+    skyTop.setAttribute('stop-color', c.top);
+    skyBot.setAttribute('stop-color', c.bot);
+
+    // 星(夜だけ見える)
+    let starOp = 0;
+    if (sunDegAlt < -2) starOp = clamp((-2 - sunDegAlt) / 10, 0, 1);
+    starsGroup.setAttribute('opacity', starOp.toFixed(2));
+
+    // 弧の点線
+    sunPathEl.setAttribute('d',  buildDailyArc(date, false));
+    moonPathEl.setAttribute('d', buildDailyArc(date, true));
+
+    // 太陽
+    const sunPos = project(sun.altitude, sun.azimuth);
+    if (sunPos.visible){
+      sunGroup.setAttribute('opacity','1');
+      sunGroup.setAttribute('transform', `translate(${sunPos.x.toFixed(1)},${sunPos.y.toFixed(1)})`);
+    } else {
+      sunGroup.setAttribute('opacity','0');
+    }
+
+    // 月
+    const moonPos = project(moon.altitude, moon.azimuth);
+    if (moonPos.visible){
+      moonGroup.setAttribute('opacity','1');
+      moonGroup.setAttribute('transform', `translate(${moonPos.x.toFixed(1)},${moonPos.y.toFixed(1)})`);
+      // 月のうすい外円(夜だけうっすら)
+      const ghostOp = (sunDegAlt < -4) ? 0.55 : 0;
+      moonGhost.setAttribute('opacity', ghostOp.toFixed(2));
+      // 月の光ってる部分
+      const path = moonLitPath(28, moon.phaseDeg);
+      if (path){
+        moonLit.setAttribute('d', path);
+        moonLit.setAttribute('opacity','1');
+      } else {
+        moonLit.setAttribute('opacity','0'); // 新月
+      }
+      // 月の向き:球面三角でブライトリム位置角を計算(連続・正確)
+      const angle = brightLimbScreenAngle(moon.altitude, moon.azimuth,
+                                          sun.altitude,  sun.azimuth);
+      moonRot.setAttribute('transform', `rotate(${angle.toFixed(1)})`);
+    } else {
+      moonGroup.setAttribute('opacity','0');
+    }
+
+    // 「沈んでいる」表示(夜なのに月だけ沈んでいる時など)
+    let hint = '';
+    if (!sunPos.visible && !moonPos.visible){
+      hint = '太陽も月も 地平線の下です';
+    } else if (!moonPos.visible){
+      hint = '月は 地平線の下にあります';
+    } else if (!sunPos.visible) {
+      // 太陽が沈んでいるのは普通だから出さない
+      hint = '';
+    }
+    if (hint){
+      hiddenInfo.setAttribute('opacity','1');
+      hiddenText.textContent = hint;
+    } else {
+      hiddenInfo.setAttribute('opacity','0');
+    }
+
+    // 情報パネル更新
+    document.getElementById('sunAz').textContent  = sunPos.visible ? azText(deg(sun.azimuth)) : '— (地平線下)';
+    document.getElementById('sunAlt').textContent = sunPos.visible ? sunDegAlt.toFixed(1)+'°' : sunDegAlt.toFixed(1)+'° (見えない)';
+    document.getElementById('sunVis').textContent = sunPos.visible ? '空にあります ☀' : '地平線の下';
+    document.getElementById('moonAz').textContent  = moonPos.visible ? azText(deg(moon.azimuth)) : '— (地平線下)';
+    document.getElementById('moonAlt').textContent = moonPos.visible ? deg(moon.altitude).toFixed(1)+'°' : deg(moon.altitude).toFixed(1)+'° (見えない)';
+    document.getElementById('moonAge').textContent = moon.ageDays.toFixed(1)+' 日';
+    document.getElementById('moonName').textContent = phaseName(moon.ageDays);
+
+    renderTopdown(date, moon, sun);
+  }
+
+  // ============================================
+  //  トップダウン(真上)ビューの描画
+  // ============================================
+  // 配置(SVG座標):太陽は右、地球は中央左、月は地球の周りを公転
+  const TD = {
+    earthX: 220,
+    earthY: 250,
+    earthR: 34,
+    orbitR: 135,
+    moonR: 14,
+  };
+
+  function renderTopdown(date, moon, sun){
+    // ----- 月の公転位置 -----
+    // 位相角 0=新月(太陽むき=右), 90=上弦(画面上), 180=満月(左), 270=下弦(下)
+    // 数学座標で角 phase からSVG座標へ:y軸はSVGで下向きなので反転
+    const phRad = moon.phaseDeg * Math.PI / 180;
+    const moonX = TD.earthX + TD.orbitR * Math.cos(phRad);
+    const moonY = TD.earthY - TD.orbitR * Math.sin(phRad);
+    const topMoon = document.getElementById('topMoon');
+    topMoon.setAttribute('transform', `translate(${moonX.toFixed(1)},${moonY.toFixed(1)})`);
+
+    // 月の光ってる側は「右半分」(常に太陽の方向)
+    // 太陽はSVG座標で(540, 250)、月は(moonX, moonY)
+    // 月から見て太陽の方向 = atan2(sunY-moonY, sunX-moonX)
+    // 月の SVG 内の子要素は「右半分が光るがわ」として描いてあるので、
+    // moonGroup全体を、右(+x方向)が太陽むきになるように回転する必要はなく、
+    // 太陽は常に右側にあるので、moonRot は回さずに OK。
+    // ただ より厳密には太陽方向に rotate しておくと、軌道のどこにいても綺麗に揃う:
+    const sunDX = 540 - moonX;
+    const sunDY = 250 - moonY;
+    const sunAngleAtMoon = Math.atan2(sunDY, sunDX) * 180 / Math.PI;
+    // topMoonの中身を回転させるため、rotate属性をtransformに追加
+    topMoon.setAttribute('transform', `translate(${moonX.toFixed(1)},${moonY.toFixed(1)}) rotate(${sunAngleAtMoon.toFixed(1)})`);
+
+    // ----- 山口の位置(自転) -----
+    // 12:00 で太陽むき(地球の右側 = +x)。1時間で 15° CCW(上向きへ)
+    const hour = date.getHours() + date.getMinutes()/60 + date.getSeconds()/3600;
+    const tokyoAngle = (hour - 12) * 15 * Math.PI / 180; // 数学座標
+    const tokyoX = TD.earthR * Math.cos(tokyoAngle);
+    const tokyoY = -TD.earthR * Math.sin(tokyoAngle);
+    const topTokyo = document.getElementById('topTokyo');
+    topTokyo.setAttribute('transform', `translate(${tokyoX.toFixed(1)},${tokyoY.toFixed(1)})`);
+
+    // ----- 視線(山口 → 月) -----
+    const tokyoAbsX = TD.earthX + tokyoX;
+    const tokyoAbsY = TD.earthY + tokyoY;
+    const losLine = document.getElementById('topLOS');
+    losLine.setAttribute('x1', tokyoAbsX.toFixed(1));
+    losLine.setAttribute('y1', tokyoAbsY.toFixed(1));
+    losLine.setAttribute('x2', moonX.toFixed(1));
+    losLine.setAttribute('y2', moonY.toFixed(1));
+    // 月が観察者から見て地平線下なら うすく表示
+    losLine.setAttribute('opacity', deg(moon.altitude) > 0 ? '0.85' : '0.18');
+  }
+
+  // 星(トップダウン背景・星空)
+  (function makeTopStars(){
+    const g = document.getElementById('topStars');
+    let html = '';
+    for (let i=0; i<60; i++){
+      const x = Math.random()*600;
+      const y = Math.random()*460;
+      const r = Math.random()*1.2 + 0.3;
+      const op = (Math.random()*0.5 + 0.3).toFixed(2);
+      html += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(2)}" fill="#fffae6" opacity="${op}"/>`;
+    }
+    g.innerHTML = html;
+  })();
+
+  // ============================================
+  //  時間進行(再生ループ)
+  // ============================================
+  const dateInput = document.getElementById('dateInput');
+  const timeInput = document.getElementById('timeInput');
+  const runBtn   = document.getElementById('runBtn');
+  const stopBtn  = document.getElementById('stopBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const statusEl = document.getElementById('status');
+  const statusText = document.getElementById('statusText');
+  const speedPills = document.getElementById('speedPills');
+  const quickJumps = document.getElementById('quickJumps');
+
+  let simDate = new Date();
+  let speed = 3600;
+  let running = false;
+  let lastTick = null;
+  let baseDate = null; // リセットで戻る日時
+
+  function setSpeed(s){
+    speed = s;
+    speedPills.querySelectorAll('button').forEach(b => {
+      b.classList.toggle('active', +b.dataset.speed === s);
+    });
+    updateStatus();
+  }
+  speedPills.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    setSpeed(+btn.dataset.speed);
+  });
+
+  function updateStatus(){
+    const w = ['日','月','火','水','木','金','土'][simDate.getDay()];
+    const ds = `${simDate.getFullYear()}年${simDate.getMonth()+1}月${simDate.getDate()}日(${w}) ${pad(simDate.getHours())}:${pad(simDate.getMinutes())}`;
+    const sp = speed.toLocaleString('ja-JP');
+    statusText.textContent = `${ds} — ${running?'▶ 再生中':'■ 停止中'} — ×${sp}`;
+    statusEl.classList.toggle('running', running);
+  }
+
+  function syncInputsFromSim(){
+    const y = simDate.getFullYear();
+    const m = pad(simDate.getMonth()+1);
+    const d = pad(simDate.getDate());
+    dateInput.value = `${y}-${m}-${d}`;
+    timeInput.value = `${pad(simDate.getHours())}:${pad(simDate.getMinutes())}`;
+  }
+
+  function syncSimFromInputs(){
+    const [y,mo,da] = dateInput.value.split('-').map(Number);
+    const [hh,mi] = timeInput.value.split(':').map(Number);
+    if (!y) return;
+    simDate = new Date(y, mo-1, da, hh||0, mi||0, 0);
+  }
+
+  function tick(t){
+    if (!running) return;
+    if (lastTick === null) lastTick = t;
+    const dt = (t - lastTick) / 1000; // 秒
+    lastTick = t;
+    simDate = new Date(simDate.getTime() + dt * speed * 1000);
+    syncInputsFromSim();
+    render(simDate);
+    updateStatus();
+    requestAnimationFrame(tick);
+  }
+
+  runBtn.addEventListener('click', () => {
+    if (running) return;
+    syncSimFromInputs();
+    if (!baseDate) baseDate = new Date(simDate);
+    running = true;
+    lastTick = null;
+    requestAnimationFrame(tick);
+    updateStatus();
+  });
+  stopBtn.addEventListener('click', () => {
+    running = false;
+    updateStatus();
+  });
+  resetBtn.addEventListener('click', () => {
+    running = false;
+    if (baseDate) simDate = new Date(baseDate);
+    syncInputsFromSim();
+    render(simDate);
+    updateStatus();
+  });
+  dateInput.addEventListener('change', () => {
+    syncSimFromInputs();
+    baseDate = new Date(simDate);
+    render(simDate);
+    updateStatus();
+  });
+  timeInput.addEventListener('change', () => {
+    syncSimFromInputs();
+    baseDate = new Date(simDate);
+    render(simDate);
+    updateStatus();
+  });
+
+  // ジャンプボタン
+  quickJumps.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    if (btn.dataset.mday !== undefined){
+      // 月れいで日付を決める。基準新月+月れい(現在月の中で最も近い周期)
+      const targetAge = +btn.dataset.mday;
+      const now = simDate.getTime();
+      // 現在の周期インデックス
+      const cyclesSoFar = Math.floor((now - REF_NEWMOON_MS) / (SYNODIC_DAYS*86400000));
+      // 候補2つ(今と次の周期)
+      const cand1 = REF_NEWMOON_MS + (cyclesSoFar*SYNODIC_DAYS + targetAge) * 86400000;
+      const cand2 = REF_NEWMOON_MS + ((cyclesSoFar+1)*SYNODIC_DAYS + targetAge) * 86400000;
+      const next = (cand1 >= now) ? cand1 : cand2;
+      simDate = new Date(next);
+      // 18:00頃に固定すると月が見やすい
+      simDate.setHours(20, 0, 0, 0);
+      syncInputsFromSim();
+      baseDate = new Date(simDate);
+      render(simDate);
+      updateStatus();
+    }
+    if (btn.dataset.time){
+      const [h,m] = btn.dataset.time.split(':').map(Number);
+      simDate.setHours(h, m, 0, 0);
+      syncInputsFromSim();
+      baseDate = new Date(simDate);
+      render(simDate);
+      updateStatus();
+    }
+  });
+
+  // ============================================
+  //  観察(かんさつ)きろく機能
+  // ============================================
+  const observations = []; // [{date, sun:{altitude,azimuth}, moon:{altitude,azimuth,phaseDeg,ageDays}}]
+  const recordBtn   = document.getElementById('recordBtn');
+  const printBtn    = document.getElementById('printBtn');
+  const csvBtn      = document.getElementById('csvBtn');
+  const clearObsBtn = document.getElementById('clearObsBtn');
+  const obsList     = document.getElementById('obsList');
+  const obsToast    = document.getElementById('obsToast');
+
+  function showToast(msg){
+    obsToast.textContent = msg;
+    obsToast.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => obsToast.classList.remove('show'), 2200);
+  }
+
+  function recordObservation(){
+    if (observations.length >= 3){
+      showToast('記録は3件までです。「↺ 記録をクリア」してから記録してください');
+      return;
+    }
+    // 同日チェック
+    if (observations.length > 0){
+      const e = observations[0].date;
+      if (e.getFullYear() !== simDate.getFullYear()
+        || e.getMonth() !== simDate.getMonth()
+        || e.getDate() !== simDate.getDate()){
+        if (!confirm('日付が異なります。これまでの記録を消去してこの日に記録し直しますか?')) return;
+        observations.length = 0;
+      }
+    }
+    // 同じ時刻チェック(分単位)
+    const same = observations.some(o =>
+      o.date.getHours() === simDate.getHours()
+      && o.date.getMinutes() === simDate.getMinutes());
+    if (same){
+      showToast('同じ時刻はすでに記録済みです');
+      return;
+    }
+    const sun = sunPosition(simDate);
+    const moon = moonInfo(simDate);
+    observations.push({
+      date: new Date(simDate),
+      sun:  { altitude: sun.altitude,  azimuth: sun.azimuth  },
+      moon: { altitude: moon.altitude, azimuth: moon.azimuth,
+              phaseDeg: moon.phaseDeg, ageDays: moon.ageDays },
+    });
+    updateObsList();
+    showToast(`${pad(simDate.getHours())}:${pad(simDate.getMinutes())} の観察を記録しました`);
+  }
+
+  function removeObs(idx){
+    observations.splice(idx, 1);
+    updateObsList();
+  }
+  window.removeObs = removeObs; // インラインonclick用
+
+  function clearObs(){
+    if (observations.length === 0) return;
+    if (!confirm('すべての記録を消去してもよろしいですか?')) return;
+    observations.length = 0;
+    updateObsList();
+  }
+
+  function updateObsList(){
+    if (observations.length === 0){
+      obsList.innerHTML = '<div class="obs-empty">⬆ 上の「スタート」で時間を進め、観察したい時刻になったら「📷 この時刻を記録」を押してください</div>';
+    } else {
+      // 時刻順にソート(表示)
+      const sorted = [...observations].sort((a,b) => a.date.getTime() - b.date.getTime());
+      obsList.innerHTML = sorted.map(obs => {
+        const origIdx = observations.indexOf(obs);
+        const t = obs.date;
+        const moonAlt = deg(obs.moon.altitude);
+        const moonAz  = deg(obs.moon.azimuth);
+        const visible = moonAlt > 0;
+        return `<div class="obs-card">
+          <div class="num">${origIdx+1}</div>
+          <div class="info">
+            <div class="time">${pad(t.getHours())}:${pad(t.getMinutes())}</div>
+            <div class="pos">${visible ? (azText(moonAz)+' / 高度 '+moonAlt.toFixed(0)+'°') : '地平線下(観測不可)'}</div>
+            <div class="phase">🌙 ${phaseName(obs.moon.ageDays)}</div>
+          </div>
+          <button class="del" onclick="removeObs(${origIdx})" title="この記録を削除">×</button>
+        </div>`;
+      }).join('');
+    }
+    const has = observations.length > 0;
+    printBtn.disabled    = !has;
+    csvBtn.disabled      = !has;
+    clearObsBtn.disabled = !has;
+  }
+
+  // ----- CSV出力(Excel対応・BOM付き) -----
+  function exportCSV(){
+    const sorted = [...observations].sort((a,b) => a.date.getTime() - b.date.getTime());
+    let csv = '番号,日付,時刻,月の方位(°),月の高度(°),月の形,月齢(日),太陽の方位(°),太陽の高度(°)\n';
+    sorted.forEach((obs, i) => {
+      const t = obs.date;
+      const dateStr = `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
+      const timeStr = `${pad(t.getHours())}:${pad(t.getMinutes())}`;
+      csv += [
+        i+1, dateStr, timeStr,
+        deg(obs.moon.azimuth).toFixed(1),
+        deg(obs.moon.altitude).toFixed(1),
+        phaseName(obs.moon.ageDays),
+        obs.moon.ageDays.toFixed(2),
+        deg(obs.sun.azimuth).toFixed(1),
+        deg(obs.sun.altitude).toFixed(1),
+      ].join(',') + '\n';
+    });
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const t0 = sorted[0].date;
+    a.href = url;
+    a.download = `月の観察記録_${t0.getFullYear()}-${pad(t0.getMonth()+1)}-${pad(t0.getDate())}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ----- ワークシート用SVG(同じ空に最大3つの月を配置) -----
+  function buildWorksheetSvg(obsArray){
+    const W = 740, HORIZON = 240, ZENITH = 20;
+    const CX = W/2, HALF = (W - 60) / 2;
+
+    function projW(altRad, azRad){
+      // オルソグラフィック投影(印刷シートも統一)
+      const altDeg = deg(altRad);
+      const cosAlt = Math.cos(altRad);
+      const sinAlt = Math.sin(altRad);
+      const Bx = cosAlt * Math.sin(azRad);
+      const By = cosAlt * Math.cos(azRad);
+      const x = CX - Bx * HALF;
+      const y = HORIZON - clamp(sinAlt, -0.18, 1) * (HORIZON - ZENITH);
+      const azDeg = deg(azRad);
+      const azS = ((azDeg - 180 + 540) % 360) - 180;
+      // 印刷ワークシートも同じく出没付近まで描画(By<0.7)
+      return { x, y, altDeg, azS, visible: altDeg > -2 && By < 0.7 };
+    }
+
+    let s = `<svg viewBox="0 0 ${W} 280" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;">`;
+    // 空(明るい)
+    s += `<defs><linearGradient id="wsSky" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stop-color="#cce8ff"/>
+            <stop offset="80%" stop-color="#fff7cc"/>
+            <stop offset="100%" stop-color="#ffd093"/>
+          </linearGradient></defs>`;
+    s += `<rect x="0" y="0" width="${W}" height="${HORIZON}" fill="url(#wsSky)"/>`;
+    // 高さの目安
+    [30, 60].forEach(d => {
+      const y = HORIZON - (d/90) * (HORIZON - ZENITH);
+      s += `<line x1="20" y1="${y}" x2="${W-20}" y2="${y}" stroke="#888" stroke-dasharray="3 4" stroke-width="0.8"/>`;
+      s += `<text x="${W-26}" y="${y - 4}" text-anchor="end" font-size="9" fill="#666">高さ ${d}°</text>`;
+    });
+    // 地平線
+    s += `<line x1="0" y1="${HORIZON}" x2="${W}" y2="${HORIZON}" stroke="#333" stroke-width="2"/>`;
+    // 山なみ
+    s += `<path d="M 0 ${HORIZON} L 60 ${HORIZON-12} L 130 ${HORIZON-2} L 200 ${HORIZON-20} L 290 ${HORIZON-4} L 380 ${HORIZON-12} L 470 ${HORIZON-2} L 550 ${HORIZON-18} L 640 ${HORIZON-3} L ${W} ${HORIZON-10} L ${W} ${HORIZON} Z" fill="#a8896d" opacity="0.55"/>`;
+    // 地面
+    s += `<rect x="0" y="${HORIZON}" width="${W}" height="40" fill="#d4af86"/>`;
+    // 方位ラベル
+    s += `<g font-size="16" font-weight="bold" fill="#222">`;
+    s += `<text x="40" y="${HORIZON+24}">東</text>`;
+    s += `<text x="${CX-10}" y="${HORIZON+24}">南</text>`;
+    s += `<text x="${W-50}" y="${HORIZON+24}">西</text>`;
+    s += `</g>`;
+
+    // 月たち
+    obsArray.forEach((obs, i) => {
+      const moonProj = projW(obs.moon.altitude, obs.moon.azimuth);
+      // 月の向き:球面三角で計算(地平線下・北側でも連続)
+      const angle = brightLimbScreenAngle(obs.moon.altitude, obs.moon.azimuth,
+                                          obs.sun.altitude,  obs.sun.azimuth);
+
+      const r = 18;
+      const t = obs.date;
+      const timeStr = `${pad(t.getHours())}:${pad(t.getMinutes())}`;
+
+      if (!moonProj.visible){
+        // 地平線下:画面下に薄く表示
+        const px = clamp(moonProj.x, 60, W-60);
+        s += `<g transform="translate(${px.toFixed(1)},${(HORIZON+12)})">`;
+        s += `<rect x="-70" y="-10" width="140" height="20" rx="10" fill="#95a5a6"/>`;
+        s += `<text x="0" y="4" text-anchor="middle" font-size="10" font-weight="bold" fill="white">${i+1}: ${timeStr} 地平線下</text>`;
+        s += `</g>`;
+        return;
+      }
+
+      // 時刻ラベル
+      s += `<g transform="translate(${moonProj.x.toFixed(1)},${(moonProj.y - r - 18).toFixed(1)})">`;
+      s += `<rect x="-32" y="-12" width="64" height="22" rx="11" fill="#0984e3" stroke="#04609b" stroke-width="1"/>`;
+      s += `<text x="0" y="4" text-anchor="middle" font-size="11" font-weight="bold" fill="white">${timeStr}</text>`;
+      s += `</g>`;
+      // 番号バッジ
+      s += `<g transform="translate(${(moonProj.x - r - 4).toFixed(1)},${(moonProj.y - r - 4).toFixed(1)})">`;
+      s += `<circle r="10" fill="#e17055" stroke="white" stroke-width="2"/>`;
+      s += `<text x="0" y="4" text-anchor="middle" font-size="11" font-weight="bold" fill="white">${i+1}</text>`;
+      s += `</g>`;
+      // 月本体(太陽方向に回転)
+      s += `<g transform="translate(${moonProj.x.toFixed(1)},${moonProj.y.toFixed(1)}) rotate(${angle.toFixed(1)})">`;
+      s += `<circle r="${r}" fill="#f5f5f5" stroke="#444" stroke-width="1.2"/>`;
+      const path = moonLitPath(r, obs.moon.phaseDeg);
+      if (path){
+        s += `<path d="${path}" fill="#ffd54f" stroke="#b9770e" stroke-width="0.8"/>`;
+      }
+      s += `</g>`;
+    });
+
+    s += '</svg>';
+    return s;
+  }
+
+  // ----- 印刷HTML(新ウィンドウ・A4縦・PDF保存可) -----
+  function buildPrintHTML(){
+    const sorted = [...observations].sort((a,b) => a.date.getTime() - b.date.getTime());
+    const t0 = sorted[0].date;
+    const dateStr = `${t0.getFullYear()}年 ${t0.getMonth()+1}月 ${t0.getDate()}日`;
+    const wd = ['日','月','火','水','木','金','土'][t0.getDay()];
+
+    const tableRows = sorted.map((obs, i) => {
+      const t = obs.date;
+      const mAz = deg(obs.moon.azimuth);
+      const mAlt = deg(obs.moon.altitude);
+      const visible = mAlt > 0;
+      return `<tr>
+        <td>${i+1}</td>
+        <td>${pad(t.getHours())}:${pad(t.getMinutes())}</td>
+        <td>${visible ? azText(mAz) : '— (地平線の下)'}</td>
+        <td>${visible ? mAlt.toFixed(0)+'°' : '—'}</td>
+        <td>${phaseName(obs.moon.ageDays)}</td>
+      </tr>`;
+    }).join('');
+
+    return `<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8">
+<title>月の観察記録シート</title>
+<style>
+  @page { size: A4 portrait; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Hiragino Mincho ProN', 'Yu Mincho', 'MS Mincho', serif; color: #1a1a1a; margin: 0; padding: 0; }
+  h1 { text-align: center; font-size: 22pt; margin: 0 0 10px 0; border-bottom: 4px double #2d3436; padding-bottom: 8px; font-family: 'Hiragino Maru Gothic ProN', 'Yu Gothic UI', sans-serif; }
+  .header-info { display: flex; justify-content: space-between; gap: 8px; font-size: 11pt; margin: 8px 0 14px 0; }
+  .header-info .item { border-bottom: 1.5px solid #999; padding: 2px 8px; flex: 1; }
+  .sky-box { border: 2px solid #333; margin: 10px 0; border-radius: 6px; overflow: hidden; }
+  .legend { font-size: 9pt; color: #666; margin: 4px 0 10px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 8px 0; font-size: 11pt; font-family: 'Hiragino Maru Gothic ProN', 'Yu Gothic UI', sans-serif; }
+  th, td { border: 1.2px solid #555; padding: 7px 10px; text-align: center; }
+  th { background: #e3f2fd; font-weight: bold; }
+  tbody tr:nth-child(even) { background: #fafafa; }
+  .notes { border: 1.5px solid #555; padding: 8px 10px; margin-top: 10px; border-radius: 4px; }
+  .notes-title { font-weight: bold; font-size: 11pt; color: #2d3436; font-family: 'Hiragino Maru Gothic ProN', sans-serif; }
+  .notes-lines { background-image: linear-gradient(transparent 22px, #ccc 22px, #ccc 23px, transparent 23px); background-size: 100% 23px; height: 92px; margin-top: 6px; }
+  .footer { margin-top: 12px; font-size: 9pt; color: #666; text-align: right; }
+  @media print { .no-print { display: none; } }
+  .no-print { position: fixed; bottom: 16px; right: 16px; background: #20bf6b; color: white; padding: 12px 22px; border-radius: 999px; font-weight: bold; font-size: 14pt; border: none; cursor: pointer; box-shadow: 0 6px 12px rgba(0,0,0,0.3); }
+</style>
+</head><body>
+  <h1>🌙 月の観察記録シート 🌙</h1>
+  <div class="header-info">
+    <span class="item">氏名:</span>
+    <span class="item">観察地:山口</span>
+    <span class="item">${dateStr}(${wd})</span>
+  </div>
+  <div class="sky-box">${buildWorksheetSvg(sorted)}</div>
+  <div class="legend">※ 番号は観察した順番、それぞれの時刻に見える月の位置と形を表しています。地平線下にあるときは下部に表示しています。</div>
+  <table>
+    <thead><tr><th style="width:46px;">番号</th><th style="width:80px;">時刻</th><th>方位</th><th style="width:72px;">高度</th><th>月の形</th></tr></thead>
+    <tbody>${tableRows}</tbody>
+  </table>
+  <div class="notes">
+    <div class="notes-title">気付いたこと(月の動き・形・太陽との関係など):</div>
+    <div class="notes-lines"></div>
+  </div>
+  <div class="footer">月と太陽の見え方シミュレーター ─ 観察地・山口市(34.19°N, 131.47°E)</div>
+  <button class="no-print" onclick="window.print()">🖨 印刷 / PDF保存</button>
+  <scr` + `ipt>setTimeout(() => window.print(), 500);<\/scr` + `ipt>
+</body></html>`;
+  }
+
+  function printWorksheet(){
+    if (observations.length === 0){
+      showToast('先に観察を記録してください');
+      return;
+    }
+    const html = buildPrintHTML();
+    const win = window.open('', '_blank', 'width=900,height=1000');
+    if (!win){
+      alert('ポップアップがブロックされました。許可してから再度お試しください。');
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+  }
+
+  recordBtn.addEventListener('click',  recordObservation);
+  printBtn.addEventListener('click',   printWorksheet);
+  csvBtn.addEventListener('click',     exportCSV);
+  clearObsBtn.addEventListener('click', clearObs);
+  updateObsList();
+
+  // ============================================
+  //  ビュー切替タブ
+  // ============================================
+  const viewTabs = document.getElementById('viewTabs');
+  const dualViewEl = document.getElementById('dualView');
+  viewTabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab');
+    if (!btn) return;
+    viewTabs.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const mode = btn.dataset.mode;
+    dualViewEl.classList.remove('mode-both', 'mode-sky', 'mode-topdown');
+    dualViewEl.classList.add(`mode-${mode}`);
+    // 切替後に即時再描画(SVGサイズが変わるため)
+    render(simDate);
+  });
+
+  // ============================================
+  //  起動時
+  // ============================================
+  // 今日の正午に初期化
+  simDate = new Date();
+  simDate.setHours(12, 0, 0, 0);
+  baseDate = new Date(simDate);
+  syncInputsFromSim();
+  setSpeed(3600);
+  render(simDate);
+  updateStatus();
+
+})();
+</script>
+</body>
+</html>
